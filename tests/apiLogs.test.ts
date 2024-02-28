@@ -74,4 +74,21 @@ describe("GET /api/v1/logs", () => {
       expect(element).toMatch(/pci/i);
     });
   });
+
+  it("200 OK - No empty lines", async () => {
+    const query = {
+      filename: "withEmptyLines.sample",
+      n: 1000,
+    };
+    const response = await request(app).get("/api/v1/logs").query(query);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.log.filename).toEqual(
+      path.join(VAR_LOG_DIR, "withEmptyLines.sample"),
+    );
+    expect(response.body.log.count).toEqual(223);
+    expect(response.body.log.events).toHaveLength(223);
+    response.body.log.events.forEach((element: string) => {
+      expect(element).not.toBe("");
+    });
+  });
 });

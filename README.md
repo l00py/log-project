@@ -12,7 +12,7 @@
   - [1.6. Project Structure](#16-project-structure)
 - [2. Setup Requirements](#2-setup-requirements)
 - [3. Get Started](#3-get-started)
-  - [Override the default server port](#override-the-default-server-port)
+  - [3.1. Override the default server port](#31-override-the-default-server-port)
 - [4. Test the REST API `/logs` endpoint](#4-test-the-rest-api-logs-endpoint)
 - [5. Log Agent - REST API](#5-log-agent---rest-api)
   - [5.1. Tail Log File](#51-tail-log-file)
@@ -44,7 +44,7 @@ to retrieve logs from /var/log on the machine receiving the REST request.
 
 ### 1.3. Assumptions
 1. The filtering of the results based on basic text/keyword is case insensitive.
-2. The filtering of the results based on basic text/keyword is applied after the `n` number of lines are retrieved.
+2. The filtering of the results based on basic text/keyword is applied before it returns `n` number of lines.
 3. Securing the REST API endpoints is out-of-scope. E.g. request parameters validation, authentication, authorization, etc.
 4. The REST API `/api/v1/logs` endpoint returns complete datasets without pagination. Currently out-of-scope, but strongly recommended for handling large files.
 
@@ -100,7 +100,7 @@ The following steps uses `nodemon` to start the nodejs server on port `3000` by 
 1. `npm install`
 1. `npm start`
 
-### Override the default server port
+### 3.1. Override the default server port
 1. Create a `.env` file
 2. Add the following environment variable
     ```sh
@@ -130,8 +130,8 @@ Get the last `n` (default=`10`) lines from a file under `/var/log`.
 | Parameter  |              Required              |   Type   | Description                                                               | Example   |
 | ---------- | :--------------------------------: | :------: | ------------------------------------------------------------------------- | --------- |
 | `filename` | <span style="color:red">yes</span> | `string` | Filename to tail under `/var/log`                                         | `foo.log` |
-| `n`        |                 no                 | `number` | Retrieves the last `n` number of lines. Defaults to `10` if omitted.      | `5`       |
-| `filter`   |                 no                 | `string` | Filters the results based on basic text/keyword match. (case insensitive) | `pci`     |
+| `n`        |                 no                 | `number` | The `n` number of lines to be returned. Defaults to `10` if omitted. Newest/Latest events are returned first.     | `5`       |
+| `filter`   |                 no                 | `string` | Search lines using basic text/keyword match. (case insensitive) | `pci`     |
 
 #### 5.1.2. Success Response
 
@@ -141,13 +141,13 @@ Get the last `n` (default=`10`) lines from a file under `/var/log`.
 
 **Content Examples**
 
-`curl -k 'http://localhost:3000/api/v1/logs?filename=linux_2k.sample&n=10'`
+`curl -k 'http://localhost:3000/api/v1/logs?filename=linux_2k.sample&n=15'`
 
 ```json
 {
   "log": {
     "filename": "/var/log/linux_2k.sample",
-    "count": 10,
+    "count": 15,
     "events": [
       "Jul 27 14:42:00 combo kernel: Linux agpgart interface v0.100 (c) Dave Jones",
       "Jul 27 14:42:00 combo kernel: Real Time Clock Driver v1.12",
@@ -158,29 +158,37 @@ Get the last `n` (default=`10`) lines from a file under `/var/log`.
       "Jul 27 14:41:59 combo kernel: SELinux:  Registering netfilter hooks",
       "Jul 27 14:41:59 combo kernel: Dquot-cache hash table entries: 1024 (order 0, 4096 bytes)",
       "Jul 27 14:41:59 combo kernel: VFS: Disk quotas dquot_6.5.1",
-      "Jul 27 14:41:54 combo network: Bringing up loopback interface:  succeeded "
+      "Jul 27 14:41:54 combo network: Bringing up loopback interface:  succeeded ",
+      "Jul 27 14:41:59 combo kernel: Total HugeTLB memory allocated, 0",
+      "Jul 27 14:41:59 combo sdpd[1696]: sdpd v1.5 started ",
+      "Jul 27 14:41:59 combo bluetooth: sdpd startup succeeded",
+      "Jul 27 14:41:54 combo network: Setting network parameters:  succeeded ",
+      "Jul 27 14:41:59 combo kernel: audit(1122475266.4294965305:0): initialized"
       ]
   }
 }
 ```
 
-`curl -k 'http://localhost:3000/api/v1/logs?filename=linux_2k.sample&n=100&filter=pci'`
+`curl -k 'http://localhost:3000/api/v1/logs?filename=linux_2k.sample&n=100&filter=cupsd'`
 
 ```json
 {
   "log": {
     "filename": "/var/log/linux_2k.sample",
-    "count": 9,
+    "count": 12,
     "events": [
-      "Jul 27 14:41:59 combo kernel: pci_hotplug: PCI Hot Plug PCI Core version: 0.5",
-      "Jul 27 14:41:59 combo kernel: PCI: Using IRQ router PIIX/ICH [8086/2410] at 0000:00:1f.0",
-      "Jul 27 14:41:59 combo kernel: PCI: Probing PCI hardware (bus 00)",
-      "Jul 27 14:41:59 combo kernel: PCI: Probing PCI hardware",
-      "Jul 27 14:41:59 combo kernel: PCI: Invalid ACPI-PCI IRQ routing table",
-      "Jul 27 14:41:58 combo kernel: ACPI: ACPI tables contain no PCI IRQ routing entries",
-      "Jul 27 14:41:58 combo kernel: PCI: Using configuration type 1",
-      "Jul 27 14:41:58 combo kernel: PCI: PCI BIOS revision 2.10 entry at 0xfc0ce, last bus=1",
-      "Jul 27 14:41:58 combo rpcidmapd: rpc.idmapd startup succeeded"
+      "Jul 24 04:20:26 combo cups: cupsd startup succeeded",
+      "Jul 24 04:20:21 combo cups: cupsd shutdown succeeded",
+      "Jul 17 04:08:16 combo cups: cupsd startup succeeded",
+      "Jul 17 04:08:10 combo cups: cupsd shutdown succeeded",
+      "Jul 10 04:04:39 combo cups: cupsd startup succeeded",
+      "Jul 10 04:04:33 combo cups: cupsd shutdown succeeded",
+      "Jul  3 04:07:55 combo cups: cupsd startup succeeded",
+      "Jul  3 04:07:49 combo cups: cupsd shutdown succeeded",
+      "Jun 26 04:04:24 combo cups: cupsd startup succeeded",
+      "Jun 26 04:04:19 combo cups: cupsd shutdown succeeded",
+      "Jun 19 04:09:02 combo cups: cupsd startup succeeded",
+      "Jun 19 04:08:57 combo cups: cupsd shutdown succeeded"
     ]
   }
 }
@@ -188,7 +196,11 @@ Get the last `n` (default=`10`) lines from a file under `/var/log`.
 
 #### 5.1.3. Error Response
 
-Query parameter `filename` not provided.
+**Code**: `400 Bad Request`
+
+**Content-Type**: `application/json`
+
+**Content Examples**: Query parameter `filename` not provided.
 
 `curl -k 'http://localhost:3000/api/v1/logs'`
 
@@ -198,7 +210,7 @@ Query parameter `filename` not provided.
     {
       "status": 400,
       "source": {
-          "parameter": "name"
+          "parameter": "filename"
       },
       "title": "Missing Required Query Parameter",
       "detail": "The `filename` query parameter is required but was not provided."
