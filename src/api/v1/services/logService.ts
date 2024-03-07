@@ -22,7 +22,11 @@ import * as fs from "fs";
 export class LogService implements ILogService {
   /**
    * Output the last part of a file.
-   * @description Returns the last `n` (default: 10) lines of a file.
+   * @description
+   * Returns the last `n` (default: 10) lines of a file.
+   * For text/keyword filter useability:
+   * If a text/keyword filter is provided, search all lines using a case insensitive match.
+   * Then, return `n` number lines with matching filter (newest/latest first).
    * @param {TailLogOptions} options Configuration for the tailing a file.
    * @returns {string[]} An array of the last `n` lines of the file.
    * @example
@@ -36,69 +40,132 @@ export class LogService implements ILogService {
   async tailLog(options: TailLogOptions): Promise<string[]> {
     const { filePath, n = DEFAULT_TAIL_ENTRIES, filterKeyword } = options;
 
-    // Array that will be returned by the method
-    let lines: string[] = [];
-    // Used for stiching the chunks together
-    let lastFragment = "";
+    // Early return if n is outside the valid range n>1
+    if (n <= 0) {
+      return [];
+    }
 
+    /**
+     * For text/keyword filter useability
+     * If a text/keyword filter is provided, search all lines using a case insensitive match.
+     * Then, return `n` number lines (newest/latest first).
+     */
+    return filterKeyword
+      ? await this._grepLinesFromEnd(filePath, n, filterKeyword)
+      : await this._tailLogNoFilter(filePath, n);
+  }
+
+  private async _tailLogNoFilter(
+    filePath: string,
+    n: number,
+  ): Promise<string[]> {
     try {
-      // Retrieve the file size that will be used as the starting point (reading from the end)
+      // Retrieves file size used as the starting position for the cursor
       const stats = await fs.promises.stat(filePath);
       const fileSize = stats.size;
-
-      // Tailing file
       const handle = await fs.promises.open(filePath, "r");
-      for (
-        let position = fileSize;
-        position > 0 && lines.length < n;
-        position -= DEFAULT_BUFFER_CHUNK_SIZE_BYTES
-      ) {
-        // Moving backward by the specified chunk size. Use the cursor position if less than the chunk size
-        const actualChunkSize: number = Math.min(
-          DEFAULT_BUFFER_CHUNK_SIZE_BYTES,
-          position,
-        );
-        const buffer = Buffer.alloc(actualChunkSize);
-        const cursor = Math.max(0, position - actualChunkSize);
-        const { bytesRead }: { bytesRead: number } = await handle.read(
-          buffer,
-          0,
-          actualChunkSize,
-          cursor,
-        );
+      let position = fileSize;
+      // Read data placeholder
+      let readData = "";
+      // Used for jumping out of the loop early once the number n of lines is satisfied
+      let lineCount = 0;
 
-        const currentChunk: string = buffer.toString(
-          DEFAULT_BUFFER_ENCODING,
-          0,
-          bytesRead,
-        );
-        const combinedChunk: string = currentChunk + lastFragment;
-        const chunkLines: string[] = combinedChunk.split(/\r?\n/);
-        lastFragment =
-          position > actualChunkSize ? chunkLines.shift() ?? "" : "";
-
-        lines = chunkLines.concat(lines);
-      }
-
-      // Stitch any remaining fragment
-      if (lastFragment) {
-        lines = [lastFragment].concat(lines);
+      // Break out from the loop if n number of lines is met
+      while (position > 0 && lineCount !== n) {
+        const currentChunk = await this._readFileChunk(handle, position);
+        readData = currentChunk + readData;
+        lineCount += currentChunk.match(/[\r\n]+/) ? 1 : 0;
+        // Update position of the cursor for next iteration
+        position -= DEFAULT_BUFFER_CHUNK_SIZE_BYTES;
       }
 
       await handle.close();
 
-      // Filter by keyword. Could be enhanced with regex if needed.
-      if (filterKeyword) {
-        lines = lines.filter((line) =>
-          line.toLowerCase().includes(filterKeyword.toLowerCase()),
-        );
-      }
-
-      // Ensure returning the last `n` entries
+      // Filter out empty lines
+      const lines = readData
+        .split(/\r?\n/)
+        .filter((line) => line.trim() !== "");
+      // Returns newest lines first
       return lines.slice(-n).reverse();
     } catch (error) {
       console.error(`Failed to read file: ${error}`);
       return [];
     }
+  }
+
+  private async _grepLinesFromEnd(
+    filePath: string,
+    n: number,
+    filterKeyword: string,
+  ): Promise<string[]> {
+    try {
+      // Retrieves file size used as the starting position for the cursor
+      const stats = await fs.promises.stat(filePath);
+      const fileSize = stats.size;
+      const handle = await fs.promises.open(filePath, "r");
+      let position = fileSize;
+      // Returned lines with matching text/keyword placeholder
+      const lines: string[] = [];
+      // Used for stiching a current chunk with the previous chunk fragment
+      let lastFragment = "";
+
+      // Break out from the loop if n number of lines is met
+      while (position > 0 && lines.length < n) {
+        const currentChunk = await this._readFileChunk(handle, position);
+        // Update position of the cursor for next iteration
+        position -= DEFAULT_BUFFER_CHUNK_SIZE_BYTES;
+
+        // Stich last chunk fragment
+        const combinedChunk = currentChunk + lastFragment;
+        // Split into lines and remove empty lines
+        const chunkLines = combinedChunk
+          .split(/\r?\n/)
+          .filter((line) => line.trim() !== "");
+        lastFragment = chunkLines.shift() ?? "";
+
+        // Capture lines with matching text/keyword case insensitive
+        chunkLines.reverse().forEach((line) => {
+          if (
+            line.toLowerCase().includes(filterKeyword.toLowerCase()) &&
+            lines.length < n
+          ) {
+            lines.push(line);
+          }
+        });
+      }
+
+      // Check the last fragment, and capture it if matching text/keyword
+      if (
+        lastFragment.toLowerCase().includes(filterKeyword.toLowerCase()) &&
+        lines.length < n
+      ) {
+        lines.push(lastFragment);
+      }
+
+      await handle.close();
+      return lines;
+    } catch (error) {
+      console.error(`Failed to read file: ${error}`);
+      return [];
+    }
+  }
+
+  private async _readFileChunk(
+    fileHandle: fs.promises.FileHandle,
+    position: number,
+    chunkSize: number = DEFAULT_BUFFER_CHUNK_SIZE_BYTES,
+    encoding: BufferEncoding = DEFAULT_BUFFER_ENCODING,
+  ): Promise<string> {
+    const actualChunkSize = Math.min(chunkSize, position);
+    const buffer = Buffer.alloc(actualChunkSize);
+    const cursor = position - actualChunkSize;
+    const { bytesRead } = await fileHandle.read(
+      buffer,
+      0,
+      actualChunkSize,
+      cursor,
+    );
+
+    return buffer.toString(encoding, 0, bytesRead);
   }
 }
