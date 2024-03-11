@@ -1,18 +1,26 @@
 /* eslint no-unused-labels: "off" */
+
 /* eslint @typescript-eslint/no-unsafe-member-access: "off" */
+
 /* eslint @typescript-eslint/no-unsafe-call: "off" */
 
+/* eslint @typescript-eslint/no-unsafe-return: "off" */
 import app, { server } from "@/index";
 import path from "path";
 import request from "supertest";
 
 const VAR_LOG_DIR = process.env.VAR_LOG_DIR ?? path.join(__dirname, "samples");
 
+// Set smaller chunk size for text clipping scenarios
+jest.mock("@/api/v1/configs/logConfig", () => ({
+  ...jest.requireActual("@/api/v1/configs/logConfig"),
+  DEFAULT_BUFFER_CHUNK_SIZE_BYTES: 10,
+}));
+
 describe("GET /api/v1/logs", () => {
   // Close the expressjs server once all tests are completed
   afterAll(() => {
     server.close();
-    jest.resetAllMocks();
   });
 
   it("400 Bad Request - Retrieve logs with missing filename query param", async () => {

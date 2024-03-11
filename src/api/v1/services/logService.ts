@@ -67,14 +67,20 @@ export class LogService implements ILogService {
       let position = fileSize;
       // Read data placeholder
       let readData = "";
-      // Used for jumping out of the loop early once the number n of lines is satisfied
-      let lineCount = 0;
 
       // Break out from the loop if n number of lines is met
-      while (position > 0 && lineCount !== n) {
+      while (position > 0 /**&& lineCount !== n+1*/) {
         const currentChunk = await this._readFileChunk(handle, position);
         readData = currentChunk + readData;
-        lineCount += currentChunk.match(/[\r\n]+/) ? 1 : 0;
+
+        // Break from the loop once we have captured n lines
+        if (
+          readData.split(/[\r\n]+/).filter((line) => line.trim() !== "")
+            .length > n
+        ) {
+          break;
+        }
+
         // Update position of the cursor for next iteration
         position -= DEFAULT_BUFFER_CHUNK_SIZE_BYTES;
       }
@@ -83,7 +89,7 @@ export class LogService implements ILogService {
 
       // Filter out empty lines
       const lines = readData
-        .split(/\r?\n/)
+        .split(/[\r\n]+/)
         .filter((line) => line.trim() !== "");
       // Returns newest lines first
       return lines.slice(-n).reverse();
@@ -117,10 +123,8 @@ export class LogService implements ILogService {
 
         // Stich last chunk fragment
         const combinedChunk = currentChunk + lastFragment;
-        // Split into lines and remove empty lines
-        const chunkLines = combinedChunk
-          .split(/\r?\n/)
-          .filter((line) => line.trim() !== "");
+        // Split into lines
+        const chunkLines = combinedChunk.split(/[\r\n]+/);
         lastFragment = chunkLines.shift() ?? "";
 
         // Capture lines with matching text/keyword case insensitive
