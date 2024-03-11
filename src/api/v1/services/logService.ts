@@ -69,7 +69,7 @@ export class LogService implements ILogService {
       let readData = "";
 
       // Break out from the loop if n number of lines is met
-      while (position > 0 /**&& lineCount !== n+1*/) {
+      while (position > 0) {
         const currentChunk = await this._readFileChunk(handle, position);
         readData = currentChunk + readData;
 
